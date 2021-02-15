@@ -1,7 +1,8 @@
 {
-    "dataset_name": "ogbg_molhiv",
+    "dataset_name": "ogbg-molhiv",
     "phi": 0.3,
     "runs": 1,
+    "num_workers": 0,
     "batch_size": 32,
     "maximum_path_size":4,
     "learning_rate":0.005,

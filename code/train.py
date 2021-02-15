@@ -3,6 +3,8 @@ import json
 import numpy as np
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
 import os
+# from torch.utils.tensorboard import SummaryWriter
+# writer = SummaryWriter()
 
 # torch
 import torch
@@ -89,7 +91,6 @@ split_idx = dataset.get_idx_split()
 # Check task type
 print('Task type: {}'.format(dataset.task_type))
 
-
 print(len(dataset))
 print(dataset.num_classes)
 print(dataset.num_node_features)
@@ -100,34 +101,38 @@ num_edge = 0
 num_node = 0
 num_graph = len(dataset)
 
-dataset1 = list()
-for i in range(len(dataset)):
-    data1 = Data(x=dataset[i].x, edge_index=dataset[i].edge_index, y=dataset[i].y)
-    data1.num_node = dataset[i].num_nodes
-    data1.num_edge = dataset[i].edge_index.size(1)
-    num_node = num_node + data1.num_node
-    num_edge = num_edge + data1.num_edge
-    dataset1.append(data1)
-dataset = dataset1
+# Need to populate num_node and num_edges !!
+# dataset1 = list()
+# for i in range(len(dataset)):
+#     data1 = Data(x=dataset[i].x, edge_index=dataset[i].edge_index, y=dataset[i].y)
+#     data1.num_node = dataset[i].num_nodes
+#     data1.num_edge = dataset[i].edge_index.size(1)
+#     num_node = num_node + data1.num_node
+#     num_edge = num_edge + data1.num_edge
+#     dataset1.append(data1)
+# dataset = dataset1
 
 num_edge = num_edge*1.0/num_graph
 num_node = num_node*1.0/num_graph
 
-# generate training, validation and test data sets
-num_training = int(num_graph*0.8)
-num_val = int(num_graph*0.1)
-num_test = num_graph - (num_training+num_val)
-
 ## train model
 for run in range(runs):
+    evaluator = Evaluator(parameters["dataset_name"])
 
-    training_set, val_set, test_set = random_split(dataset, [num_training,num_val,num_test])
-    train_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(dataset[split_idx["train"]],
+     batch_size=parameters["batch_size"], shuffle=True,
+      num_workers = parameters["num_workers"])
 
+    val_loader = DataLoader(dataset[split_idx["valid"]],
+     batch_size=parameters["batch_size"],
+     shuffle=False, num_workers = parameters["num_workers"])
+
+    test_loader = DataLoader(dataset[split_idx["test"]], 
+    batch_size=parameters["batch_size"], shuffle=False, 
+    num_workers = parameters["num_workers"])
+
+   
     print('***** PAN for {}, phi {} *****'.format(datasetname,phi))
-    print('#training data: {}, #test data: {}'.format(num_training,num_test))
     print('Mean #nodes: {:.1f}, mean #edges: {:.1f}'.format(num_node,num_edge))
     print('Network architectur: PC-PA')
     print('filter_size: {:d}, pool_ratio: {:.2f}, learning rate: {:.2e}, weight decay: {:.2e}, nhid: {:d}'.format(filter_size,pool_ratio,learning_rate,weight_decay,nhid))
