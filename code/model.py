@@ -688,7 +688,8 @@ class PAN(torch.nn.Module):
         
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
         self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
-        self.lin3 = torch.nn.Linear(nhid//4, num_classes)
+        # self.lin3 = torch.nn.Linear(nhid//4, num_classes)
+        self.lin3 = torch.nn.Linear(nhid//4, 1)
 
         self.mlp = torch.nn.Linear(nhid, num_classes)
 
@@ -721,7 +722,8 @@ class PAN(torch.nn.Module):
         x = F.relu(self.lin1(x))
         x = F.dropout(x, p=0.5, training=self.training)
         x = F.relu(self.lin2(x))
-        x = F.log_softmax(self.lin3(x), dim=-1)
+        # x = F.log_softmax(self.lin3(x), dim=-1)
+        x = torch.sigmoid(self.lin3(x))
 
 #        x = self.mlp(x)
 #        x = F.log_softmax(x, dim=-1)

@@ -25,36 +25,15 @@ print('Device: {}'.format(device))
 with open('parameters.json') as json_file:
     parameters = json.load(json_file)
 
-# def train(model, train_loader, device):
-#     model.train()
-
-#     loss_all = 0
-#     for data in train_loader:
-#         data = data.to(device)
-#         optimizer.zero_grad()
-#         output, _ = model(data)
-#         loss = F.nll_loss(output, data.y)
-#         loss.backward()
-#         loss_all += data.num_graphs * loss.item()
-#         optimizer.step()
-#         for name, param in model.named_parameters():
-#             # if 'pan_pool_weight' in name:
-#             #     param.data = param.data.clamp(0, 1)
-#             if 'panconv_filter_weight' in name:
-#                 param.data = param.data.clamp(0, 1)
-#             if 'panpool_filter_weight' in name:
-#                 param.data = param.data.clamp(0, 1)
-#     return loss_all / len(train_loader.dataset)
-
+cls_criterion = torch.nn.BCEWithLogitsLoss()
 
 def eval(model, loader, device, evaluator):
     model.eval()
 
-    # correct = 0
-    # loss = 0.0
-
     y_true = []
     y_pred = []
+
+    evaluation_loss = 0
 
     for step, batch in enumerate(tqdm(loader, desc="Iteration")):
         batch = batch.to(device)
@@ -64,6 +43,12 @@ def eval(model, loader, device, evaluator):
         else:
             with torch.no_grad():
                 pred, _ = model(batch)
+                # label = batch.y.squeeze(1)
+                # loss = F.nll_loss(pred, label).item()
+                loss = cls_criterion(pred, batch.y.float())
+                evaluation_loss += data.num_graphs * loss.item()
+
+
 
             pred = pred.max(dim=1)[1]
             y_true.append(batch.y.view(pred.shape).detach().cpu())
@@ -74,17 +59,10 @@ def eval(model, loader, device, evaluator):
 
     input_dict = {"y_true": y_true, "y_pred": y_pred}
 
-    return evaluator.eval(input_dict)
-    # for data in loader:
-    #     data = data.to(device)
-    #     with torch.no_grad():
-    #         out, _ = model(data)
-    #     pred = out.max(dim=1)[1]
-    #     label = data.y.squeeze(1)
-    #     correct += pred.eq(label).sum().item()
-    #     label = data.y.squeeze(1)
-    #     loss += F.nll_loss(out, label).item()*data.num_graphs
-    # return correct / len(loader.dataset), loss/len(loader.dataset)
+    print(f"Number of predicted positive: {y_pred.sum()}")
+    print(f"Number of real positive: {y_true.sum()}")
+
+    return evaluator.eval(input_dict), evaluation_loss
 
 
 datasetname = parameters["dataset_name"]
@@ -98,7 +76,7 @@ pool_ratio = parameters["pool_ratio"]
 nhid = parameters["nhid"]
 epochs = parameters["epochs"]
 
-train_loss = np.zeros((runs,epochs),dtype=np.float)
+# train_loss = np.zeros((runs,epochs),dtype=np.float)
 val_loss = np.zeros((runs,epochs),dtype=np.float)
 val_acc = np.zeros((runs,epochs),dtype=np.float)
 test_acc = np.zeros(runs,dtype=np.float)
@@ -177,15 +155,16 @@ for run in range(runs):
         # training
         print(f"train/ Epoch:{epoch}")
         model.train()
-        loss_all = 0
-        for data in train_loader:
+        train_loss = 0
+        for data in tqdm(train_loader):
             data = data.to(device)
             optimizer.zero_grad()
             output, _ = model(data)
-            label = data.y.squeeze(1)
-            loss = F.nll_loss(output, label)
+            # label = data.y.squeeze(1)
+            # loss = F.nll_loss(output, label)
+            loss = cls_criterion(output, data.y.float())
             loss.backward()
-            loss_all += data.num_graphs * loss.item()
+            train_loss += data.num_graphs * loss.item()
             optimizer.step()
             scheduler.step()
             for name, param in model.named_parameters():
@@ -195,20 +174,23 @@ for run in range(runs):
                     param.data = param.data.clamp(0, 1)
                 if 'panpool_filter_weight' in name:
                     param.data = param.data.clamp(0, 1)
-        loss = loss_all / len(train_loader.dataset)   
-        train_loss[run,epoch] = loss
-        train_perf = eval(model, train_loader, device, evaluator)
+        loss = train_loss / len(train_loader.dataset)   
+        # train_loss[run, epoch] = loss
+        train_perf, _ = eval(model, train_loader, device, evaluator)
+        print(f"Epoch: {epoch} Train Loss: {loss}")
         # validation
-        validation_perf = eval(model, val_loader, device, evaluator)
+        validation_perf, validation_loss = eval(model, val_loader, device, evaluator)
+        print(f"Epoch: {epoch} Validation Loss: {validation_loss}")
         # Test
-        test_perf = eval(model, test_loader, device, evaluator)
-        # val_loss[run,epoch] = val_loss_1
-        # val_acc[run,epoch] = val_acc_1
-        # print('Run: {:02d}, Epoch: {:03d}, Val loss: {:.4f}, Val acc: {:.4f}'.format(run+1,epoch+1,val_loss[run,epoch],val_acc[run,epoch]))
-        if validation_perf < min_loss[run]:
+        test_perf, test_loss = eval(model, test_loader, device, evaluator)
+        print(f"Epoch: {epoch} Test Loss: {test_loss}")
+        print(f"train_perf: {train_perf}")
+        print(f"val_perf: {validation_perf}")
+        print(f"val_perf: {test_perf}")
+        if test_loss < min_loss[run]:
             # save the model dand reuse later in test
             torch.save(model.state_dict(), 'latest.pth')
-            min_loss[run] = validation_perf
+            # min_loss[run] = validation_perf
 
     # test
     model.load_state_dict(torch.load('latest.pth'))
