@@ -16,16 +16,37 @@ from torch.utils.data import random_split
 from torch_geometric.data import DataLoader, Data
 
 # model
-from model import PAN
+from model import PAN, SmallPAN, GNN
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print('Device: {}'.format(device))
 
-# loading params
+# loading paramsx
 with open('parameters.json') as json_file:
     parameters = json.load(json_file)
 
-cls_criterion = torch.nn.BCEWithLogitsLoss()
+# pos_weight = torch.tensor([100])
+# cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+def train(model, device, loader, optimizer):
+    model.train()
+    total_train_loss = 0
+    for step, batch in enumerate(tqdm(train_loader, desc="Train Iteration")):
+        bacth = batch.to(device)
+
+        if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
+            print("JUST PASSED SOMETHING")
+            pass
+        else:
+            pred, _ = model(batch)
+            optimizer.zero_grad()
+            is_labeled = batch.y == bacth.y
+            loss = cls_criterion(pred.to(torch.float32)[is_labeled], batch.y.to(torch.float32)[is_labeled])
+            total_train_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+    return total_train_loss
 
 def eval(model, loader, device, evaluator):
     model.eval()
@@ -43,14 +64,11 @@ def eval(model, loader, device, evaluator):
         else:
             with torch.no_grad():
                 pred, _ = model(batch)
-                # label = batch.y.squeeze(1)
-                # loss = F.nll_loss(pred, label).item()
+                # is_labeled = batch.y == bacth.y
                 loss = cls_criterion(pred, batch.y.float())
-                evaluation_loss += data.num_graphs * loss.item()
+                evaluation_loss += loss.item()
 
-
-
-            pred = pred.max(dim=1)[1]
+            # pred = pred.max(dim=1)[1]
             y_true.append(batch.y.view(pred.shape).detach().cpu())
             y_pred.append(pred.detach().cpu())
 
@@ -75,12 +93,6 @@ weight_decay = parameters["weight_decay"]
 pool_ratio = parameters["pool_ratio"]
 nhid = parameters["nhid"]
 epochs = parameters["epochs"]
-
-# train_loss = np.zeros((runs,epochs),dtype=np.float)
-val_loss = np.zeros((runs,epochs),dtype=np.float)
-val_acc = np.zeros((runs,epochs),dtype=np.float)
-test_acc = np.zeros(runs,dtype=np.float)
-min_loss = 1e10*np.ones(runs)
 
 # dataset
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -119,87 +131,58 @@ num_graph = len(dataset)
 num_edge = num_edge*1.0/num_graph
 num_node = num_node*1.0/num_graph
 
-# cls_criterion = torch.nn.BCEWithLogitsLoss()
-## train model
-for run in range(runs):
-    evaluator = Evaluator(parameters["dataset_name"])
+evaluator = Evaluator(parameters["dataset_name"])
 
-    train_loader = DataLoader(dataset[split_idx["train"]],
-     batch_size=parameters["batch_size"], shuffle=True,
-      num_workers = parameters["num_workers"])
+train_loader = DataLoader(dataset[split_idx["train"]],
+    batch_size=parameters["batch_size"], shuffle=True,
+    num_workers = parameters["num_workers"])
 
-    val_loader = DataLoader(dataset[split_idx["valid"]],
-     batch_size=parameters["batch_size"],
-     shuffle=False, num_workers = parameters["num_workers"])
+val_loader = DataLoader(dataset[split_idx["valid"]],
+    batch_size=parameters["batch_size"],
+    shuffle=False, num_workers = parameters["num_workers"])
 
-    test_loader = DataLoader(dataset[split_idx["test"]], 
+test_loader = DataLoader(dataset[split_idx["test"]], 
     batch_size=parameters["batch_size"], shuffle=False, 
     num_workers = parameters["num_workers"])
 
-   
-    print('***** PAN for {}, phi {} *****'.format(datasetname,phi))
-    print('Mean #nodes: {:.1f}, mean #edges: {:.1f}'.format(num_node,num_edge))
-    print('Network architectur: PC-PA')
-    print('filter_size: {:d}, pool_ratio: {:.2f}, learning rate: {:.2e}, weight decay: {:.2e}, nhid: {:d}'.format(filter_size,pool_ratio,learning_rate,weight_decay,nhid))
-    print('batchsize: {:d}, epochs: {:d}, runs: {:d}'.format(batch_size,epochs,runs))
-    print('Device: {}'.format(device))
 
-    ## train model
-    model = PAN(num_node_features,num_classes,nhid=nhid,ratio=pool_ratio,filter_size=filter_size).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    #uses scheduler for training only
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parameters["epochs"], 
-    eta_min=10e-7)
+print('***** PAN for {}, phi {} *****'.format(datasetname,phi))
+print('Mean #nodes: {:.1f}, mean #edges: {:.1f}'.format(num_node,num_edge))
+print('Network architectur: PC-PA')
+print('filter_size: {:d}, pool_ratio: {:.2f}, learning rate: {:.2e}, weight decay: {:.2e}, nhid: {:d}'.format(filter_size,pool_ratio,learning_rate,weight_decay,nhid))
+print('batchsize: {:d}, epochs: {:d}, runs: {:d}'.format(batch_size,epochs,runs))
+print('Device: {}'.format(device))
 
-    for epoch in range(epochs):
-        # training
-        print(f"train/ Epoch:{epoch}")
-        model.train()
-        train_loss = 0
-        for data in tqdm(train_loader):
-            data = data.to(device)
-            optimizer.zero_grad()
-            output, _ = model(data)
-            # label = data.y.squeeze(1)
-            # loss = F.nll_loss(output, label)
-            loss = cls_criterion(output, data.y.float())
-            loss.backward()
-            train_loss += data.num_graphs * loss.item()
-            optimizer.step()
-            scheduler.step()
-            for name, param in model.named_parameters():
-                # if 'pan_pool_weight' in name:
-                #     param.data = param.data.clamp(0, 1)
-                if 'panconv_filter_weight' in name:
-                    param.data = param.data.clamp(0, 1)
-                if 'panpool_filter_weight' in name:
-                    param.data = param.data.clamp(0, 1)
-        loss = train_loss / len(train_loader.dataset)   
-        # train_loss[run, epoch] = loss
-        train_perf, _ = eval(model, train_loader, device, evaluator)
-        print(f"Epoch: {epoch} Train Loss: {loss}")
-        # validation
-        validation_perf, validation_loss = eval(model, val_loader, device, evaluator)
-        print(f"Epoch: {epoch} Validation Loss: {validation_loss}")
-        # Test
-        test_perf, test_loss = eval(model, test_loader, device, evaluator)
-        print(f"Epoch: {epoch} Test Loss: {test_loss}")
-        print(f"train_perf: {train_perf}")
-        print(f"val_perf: {validation_perf}")
-        print(f"val_perf: {test_perf}")
-        if test_loss < min_loss[run]:
-            # save the model dand reuse later in test
-            torch.save(model.state_dict(), 'latest.pth')
-            # min_loss[run] = validation_perf
+model = SmallPAN(num_node_features,num_classes,nhid=nhid,ratio=pool_ratio,filter_size=filter_size).to(device)
+# model = GNN().to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+#uses scheduler for training only
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=parameters["epochs"], 
+# eta_min=10e-7)
 
-    # test
-    model.load_state_dict(torch.load('latest.pth'))
-    test_perf = eval(model, test_loader, device, evaluator)
-    print(f'==Test perf: {test_perf}')
+list_training_loss = []
 
-# print('==Mean Test Acc: {:.4f}'.format(np.mean(test_acc)))
+for epoch in range(epochs):
+    # training
+    print(f"train/ Epoch:{epoch}")
+    # model.train()
+    train_loss = 0
+    train_loss = train(model, device, train_loader, optimizer)
+    list_training_loss += train_loss
+    print(f"=====TOTAL TRAIN LOSS===== {train_loss}")
 
-# t1 = time.time()
-# sv = datasetname + '_pcpa_runs' + str(runs) + '_phi' + str(phi) + '_time' + str(t1) + '.mat'
-# sio.savemat(sv,mdict={'test_acc':test_acc,'val_loss':val_loss,'val_acc':val_acc,'train_loss':train_loss,'filter_size':filter_size,'learning_rate':learning_rate,'weight_decay':weight_decay,'nhid':nhid,'batch_size':batch_size,'epochs':epochs})
+    print("Evaluating..")
+    train_perf, _ = eval(model, train_loader, device, evaluator)
+    validation_perf, validation_loss = eval(model, val_loader, device, evaluator)
+    test_perf, test_loss = eval(model, test_loader, device, evaluator)
+    print(f"Train Loss: {train_loss}")
+    print(f"Validation Loss: {validation_loss}")
+    print(f"Test Loss: {test_loss}")
+    print(f"train_perf: {train_perf}")
+    print(f"val_perf: {validation_perf}")
+    print(f"test_perf: {test_perf}")
 
+# test
+model.load_state_dict(torch.load('latest.pth'))
+test_perf = eval(model, test_loader, device, evaluator)
+print(f'==Test perf: {test_perf}')
