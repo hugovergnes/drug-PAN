@@ -689,7 +689,8 @@ class PAN(torch.nn.Module):
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
         self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
         # self.lin3 = torch.nn.Linear(nhid//4, num_classes)
-        self.lin3 = torch.nn.Linear(nhid//4, 1)
+        # self.lin3 = torch.nn.Linear(nhid//4, 1)
+        self.lin3 = torch.nn.Linear(nhid, 1)
 
         self.mlp = torch.nn.Linear(nhid, num_classes)
 
@@ -701,27 +702,27 @@ class PAN(torch.nn.Module):
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
-        x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
+        # x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
+#         perm_list.append(perm)
 
-#        AFTERDROP, edge_mask_list = self.drop1(edge_index, p=0.5)
-        x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv2.m
-        x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
-#
-##        AFTERDROP, edge_mask_list = self.drop2(edge_index, p=0.5)
-        x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv3.m
-        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
+# #        AFTERDROP, edge_mask_list = self.drop1(edge_index, p=0.5)
+#         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
+#         M = self.conv2.m
+#         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
+#         perm_list.append(perm)
+# #
+# ##        AFTERDROP, edge_mask_list = self.drop2(edge_index, p=0.5)
+#         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
+#         M = self.conv3.m
+#         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
+#         perm_list.append(perm)
         
         mean = scatter_mean(x, batch, dim=0)
         x = mean
         
-        x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = F.relu(self.lin2(x))
+#         x = F.relu(self.lin1(x))
+#         x = F.dropout(x, p=0.5, training=self.training)
+#         x = F.relu(self.lin2(x))
         # x = F.log_softmax(self.lin3(x), dim=-1)
         x = torch.sigmoid(self.lin3(x))
 
@@ -731,7 +732,52 @@ class PAN(torch.nn.Module):
         return x, perm_list
 
 
+class SmallPAN(torch.nn.Module):
+    def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
+        super(SmallPAN, self).__init__()
+        self.conv1 = PANConv(num_node_features, nhid, filter_size)
+        self.pool1 = PANPooling(nhid, filter_size=filter_size)
+        self.drop1 = PANDropout()
 
+        self.conv2 = PANConv(nhid, nhid, filter_size=2)
+        self.pool2 = PANPooling(nhid)
+        self.drop2 = PANDropout()
 
+        self.conv3 = PANConv(nhid, nhid, filter_size=2)
+        self.pool3 = PANPooling(nhid)
 
+        self.lin1 = torch.nn.Linear(nhid, nhid//2)
+        self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
+        self.lin3 = torch.nn.Linear(nhid//4, 1)
+        
+    def forward(self, data):
 
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        perm_list = list()
+        edge_mask_list = None
+
+        x = self.conv1(x, edge_index)
+        M = self.conv1.m
+        x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
+        perm_list.append(perm)
+        edge_mask_list = self.drop1(edge_index, p=0.5)
+
+        x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
+        M = self.conv2.m
+        x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
+        perm_list.append(perm)
+        edge_mask_list = self.drop2(edge_index, p=0.5)
+
+        x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
+        M = self.conv3.m
+        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
+        perm_list.append(perm)
+
+        mean = scatter_mean(x, batch, dim=0)
+        x = mean
+
+        x = self.lin1(x)
+        x = self.lin2(x)
+        x = self.lin3(x)
+
+        return x, perm_list
