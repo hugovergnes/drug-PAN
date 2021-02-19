@@ -16,22 +16,22 @@ from torch.utils.data import random_split
 from torch_geometric.data import DataLoader, Data
 
 # model
-from model import PAN, SmallPAN, GNN
+from model import PAN, SmallPAN
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print('Device: {}'.format(device))
 
-# loading paramsx
+# loading params
 with open('parameters.json') as json_file:
     parameters = json.load(json_file)
 
-# pos_weight = torch.tensor([100])
+# pos_weight = torch.tensor([100]).to(device)
 # cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+cls_criterion = torch.nn.BCEWithLogitsLoss()
 
 def train(model, device, loader, optimizer):
     model.train()
-    total_train_loss = 0
+    # total_train_loss = 0
     for step, batch in enumerate(tqdm(train_loader, desc="Train Iteration")):
         bacth = batch.to(device)
 
@@ -43,10 +43,10 @@ def train(model, device, loader, optimizer):
             optimizer.zero_grad()
             is_labeled = batch.y == bacth.y
             loss = cls_criterion(pred.to(torch.float32)[is_labeled], batch.y.to(torch.float32)[is_labeled])
-            total_train_loss += loss.item()
+            # total_train_loss += loss.item()
             loss.backward()
             optimizer.step()
-    return total_train_loss
+    # return total_train_loss
 
 def eval(model, loader, device, evaluator):
     model.eval()
@@ -166,13 +166,11 @@ for epoch in range(epochs):
     # training
     print(f"train/ Epoch:{epoch}")
     # model.train()
-    train_loss = 0
-    train_loss = train(model, device, train_loader, optimizer)
-    list_training_loss += train_loss
-    print(f"=====TOTAL TRAIN LOSS===== {train_loss}")
+    train(model, device, train_loader, optimizer)
 
-    print("Evaluating..")
-    train_perf, _ = eval(model, train_loader, device, evaluator)
+    print(f"===== EVAL =====") 
+    train_perf, train_loss = eval(model, train_loader, device, evaluator)
+    list_training_loss.append(train_loss)
     validation_perf, validation_loss = eval(model, val_loader, device, evaluator)
     test_perf, test_loss = eval(model, test_loader, device, evaluator)
     print(f"Train Loss: {train_loss}")
