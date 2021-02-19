@@ -25,9 +25,9 @@ print('Device: {}'.format(device))
 with open('parameters.json') as json_file:
     parameters = json.load(json_file)
 
-# pos_weight = torch.tensor([100]).to(device)
-# cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-cls_criterion = torch.nn.BCEWithLogitsLoss()
+pos_weight = torch.tensor([100]).to(device)
+cls_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+# cls_criterion = torch.nn.BCEWithLogitsLoss()
 
 def train(model, device, loader, optimizer):
     model.train()
@@ -41,7 +41,7 @@ def train(model, device, loader, optimizer):
         else:
             pred, _ = model(batch)
             optimizer.zero_grad()
-            is_labeled = batch.y == bacth.y
+            is_labeled = batch.y == batch.y
             loss = cls_criterion(pred.to(torch.float32)[is_labeled], batch.y.to(torch.float32)[is_labeled])
             # total_train_loss += loss.item()
             loss.backward()
