@@ -34,7 +34,7 @@ model = LightningPAN(9, 1, nhid=nhid,ratio=pool_ratio,filter_size=filter_size).t
 
 lr_logger = LearningRateMonitor(**LearningRateMonitor_Params)
 neptune_logger = NeptuneLogger(
-                api_key="ANONYMOUS",
+                api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiMDk5YjVmYzYtNTU0My00MzhkLWJiYTAtMGM4ZGVhZmEyMTZiIn0=",
                 project_name='hvergnes/PAN',
                 close_after_fit=False,
                 params=parameters, # your hyperparameters, immutable

@@ -17,6 +17,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
 
 from model import PANConv, PANPooling, PANDropout
+from Norm import Norm
 
 
 class BaseNet(LightningModule):
@@ -109,14 +110,17 @@ class LightningPAN(BaseNet):
     def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
         super(LightningPAN, self).__init__()
         self.conv1 = PANConv(num_node_features, nhid, filter_size)
+        self.norm1 = Norm('gn', nhid)
         self.pool1 = PANPooling(nhid, filter_size=filter_size)
         self.drop1 = PANDropout()
 
         self.conv2 = PANConv(nhid, nhid, filter_size=2)
+        self.norm2 = Norm('gn', nhid)
         self.pool2 = PANPooling(nhid)
         self.drop2 = PANDropout()
 
         self.conv3 = PANConv(nhid, nhid, filter_size=2)
+        self.norm3 = Norm('gn', nhid)
         self.pool3 = PANPooling(nhid)
 
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
@@ -131,18 +135,21 @@ class LightningPAN(BaseNet):
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
+        x = self.norm1(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop1(edge_index, p=0.5)
 
         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv2.m
+        x = self.norm2(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop2(edge_index, p=0.5)
 
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
+        x = self.norm3(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
 
@@ -165,6 +172,12 @@ class LightningPAN(BaseNet):
             loss = self.criterion(pred.to(torch.float32)[is_labeled], batch.y.to(torch.float32)[is_labeled])
             y_true = batch.y.view(pred.shape).detach().cpu().numpy()
             y_pred = pred.detach().cpu().numpy()
+        self.log("pool1_weight_X", self.pool1.pan_pool_weight[0])
+        self.log("pool1_weight_diagM", self.pool1.pan_pool_weight[1])
+        self.log("pool2_weight_X", self.pool2.pan_pool_weight[0])
+        self.log("pool2_weight_diagM", self.pool2.pan_pool_weight[1])
+        self.log("pool3_weight_X", self.pool3.pan_pool_weight[0])
+        self.log("pool3_weight_diagM", self.pool3.pan_pool_weight[1])
         return {"loss": loss, "y_true": y_true, "y_pred": y_pred}
 
     def training_epoch_end(self, outputs):
