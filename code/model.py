@@ -161,17 +161,18 @@ class PANPooling(torch.nn.Module):
         if panpool_filter_weight is None:
             self.panpool_filter_weight = torch.nn.Parameter(0.5 * torch.ones(filter_size), requires_grad=True)
 
+        # learnable parameters
         self.transform = Parameter(torch.ones(in_channels), requires_grad=True)
 
+        # Weights used for the Pooling Procedure
         if pan_pool_weight is None:
             #self.weight = torch.tensor([0.7, 0.3], device=self.transform.device)
             self.pan_pool_weight = torch.nn.Parameter(0.5 * torch.ones(2), requires_grad=True)
         else:
             self.pan_pool_weight = pan_pool_weight
 
-    def forward(self, x, edge_index, M=None, batch=None, num_nodes=None):
 
-        """"""
+    def forward(self, x, edge_index, M=None, batch=None, num_nodes=None):
         if batch is None:
             batch = edge_index.new_zeros(x.size(0))
 
