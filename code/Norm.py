@@ -4,7 +4,6 @@ from torch_scatter import scatter_mean
 
 
 class Norm(nn.Module):
-
     def __init__(self, norm_type, hidden_dim=300, print_info=None):
         super(Norm, self).__init__()
         assert norm_type in ['bn', 'gn', None]
@@ -20,16 +19,8 @@ class Norm(nn.Module):
         
         self.__eps = 10e-10 #Numerical Stability
 
-    # graph
-    # tensor: node features
-    # def forward(self, graph, tensor, print_=False):
-    def forward(self, x, batch):
-        #### CODE FROM ORIGINAL REPO, but confused about it
-        # if self.norm is None:
-        #     return tensor
-        # if type(self.norm) != str:
-        #     return self.norm(tensor)
-        
+
+    def forward(self, x, batch):        
         per_graph_mean = scatter_mean(x, index=batch, dim=0) 
         shifted = x - self.alpha * per_graph_mean[batch]
         sigma_2 = scatter_mean(torch.pow(shifted, 2), index=batch, dim=0) + self.__eps
