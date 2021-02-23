@@ -2,6 +2,7 @@
 import json
 import numpy as np
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
+from ogb.graphproppred.mol_encoder import AtomEncoder
 from sklearn.metrics import accuracy_score
 
 # torch
@@ -21,8 +22,7 @@ from Norm import Norm
 
 
 class BaseNet(LightningModule):
-    def __init__(self, batch_size=32, lr=1e-3, weight_decay=1e-3, num_workers=0, 
-                 criterion=torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor([30])),  epochs=20):
+    def __init__(self, criterion=torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor([30]))):
         super().__init__()
 
         # loading params
@@ -46,14 +46,13 @@ class BaseNet(LightningModule):
         self._collate_fn = None
         self._train_loader = None
 
-        self.batch_size = batch_size
-        self.num_workers = num_workers
+        self.batch_size = self.configuration["batch_size"]
+        self.num_workers = self.configuration["num_workers"]
         
+        self.lr = self.configuration["learning_rate"]
+        self.epochs=self.configuration["epochs"]
         
-        self.lr = lr
-        self.epochs=epochs
-        
-        self.weight_decay = weight_decay
+        self.weight_decay = self.configuration["weight_decay"]
         self.criterion = criterion
 
         self.evaluator = Evaluator(parameters["dataset_name"])
@@ -62,8 +61,11 @@ class BaseNet(LightningModule):
     def configure_optimizers(self):
         optimizer =  torch.optim.Adam(self.parameters(), lr= self.lr, betas= (0.9,0.999), 
                           weight_decay= self.weight_decay)
-        
-        return optimizer
+        # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.lr,
+        # epochs=self.epochs, steps_per_epoch=2)
+        # lmbda = lambda epoch: 0.98
+        # scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lmbda, last_epoch=-1, verbose=False)
+        return [optimizer] #[scheduler]
         
     def train_dataloader(self):
         dataset = PygGraphPropPredDataset(name='ogbg-molhiv')
@@ -109,7 +111,9 @@ class BaseNet(LightningModule):
 class LightningPAN(BaseNet):
     def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
         super(LightningPAN, self).__init__()
-        self.conv1 = PANConv(num_node_features, nhid, filter_size)
+        self.atom_encoder = AtomEncoder(emb_dim = 32)
+
+        self.conv1 = PANConv(32, nhid, filter_size)
         self.norm1 = Norm('gn', nhid)
         self.pool1 = PANPooling(nhid, filter_size=filter_size)
         self.drop1 = PANDropout()
@@ -124,40 +128,44 @@ class LightningPAN(BaseNet):
         self.pool3 = PANPooling(nhid)
 
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
+        self.bn1 = torch.nn.BatchNorm1d(nhid//2)
         self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
+        self.bn2 = torch.nn.BatchNorm1d(nhid//4)
         self.lin3 = torch.nn.Linear(nhid//4, 1)
         
     def forward(self, data):
 
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = self.atom_encoder(x)
         perm_list = list()
         edge_mask_list = None
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
-        x = self.norm1(x, batch)
+        x = F.relu(self.norm1(x, batch))
         x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop1(edge_index, p=0.5)
 
         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv2.m
-        x = self.norm2(x, batch)
+        x = F.relu(self.norm2(x, batch))
         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop2(edge_index, p=0.5)
 
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
-        x = self.norm3(x, batch)
+        x = F.relu(self.norm3(x, batch))
         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
 
         mean = scatter_mean(x, batch, dim=0)
         x = mean
 
-        x = self.lin1(x)
-        x = self.lin2(x)
+        x = F.relu(self.bn1(self.lin1(x)))
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(self.bn2(self.lin2(x)))
         x = self.lin3(x)
 
         return x, perm_list
