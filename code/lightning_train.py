@@ -30,16 +30,16 @@ LearningRateMonitor_Params = {'logging_interval': 'epoch'}
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print('Device: {}'.format(device))
 
-model = LightningPAN(9, 1, nhid=nhid,ratio=pool_ratio,filter_size=filter_size).to(device)
+model = LightningPAN(9, 1, nhid=nhid,ratio=pool_ratio,filter_size=filter_size)
 
 lr_logger = LearningRateMonitor(**LearningRateMonitor_Params)
 neptune_logger = NeptuneLogger(
-                api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiMDk5YjVmYzYtNTU0My00MzhkLWJiYTAtMGM4ZGVhZmEyMTZiIn0=",
+                api_key=ANONYMOUS,
                 project_name='hvergnes/PAN',
                 close_after_fit=False,
                 params=parameters, # your hyperparameters, immutable
-                tags=['PAN'],  # tags
-                upload_source_files="parameters.json"
+                tags=['PAN', 'best_model'],  # tags
+                upload_source_files=["parameters.json", "lightning_model.py"]
                 )
 
 trainer = Trainer(
@@ -59,7 +59,8 @@ y_pred = np.array([])
 for i, batch in enumerate(test_loader):
     y = batch.y.cpu().detach().numpy()
     y_hat, _ = model(batch)
-    y_hat = y_hat.argmax(axis=1).cpu().detach().numpy()
+    y_hat = y_hat.cpu().detach().numpy()
+    y_hat = np.array([1 if value > 0.5 else 0 for value in y_hat])
 
     y_true = np.append(y_true, y)
     y_pred = np.append(y_pred, y_hat)
