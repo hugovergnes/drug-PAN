@@ -65,7 +65,7 @@ class BaseNet(LightningModule):
         # epochs=self.epochs, steps_per_epoch=2)
         # lmbda = lambda epoch: 0.98
         # scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lmbda, last_epoch=-1, verbose=False)
-        return [optimizer] #[scheduler]
+        return [optimizer] #,[scheduler]
         
     def train_dataloader(self):
         dataset = PygGraphPropPredDataset(name='ogbg-molhiv')
@@ -142,21 +142,21 @@ class LightningPAN(BaseNet):
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
-        x = F.relu(self.norm1(x, batch))
+        x = self.norm1(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop1(edge_index, p=0.5)
 
         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv2.m
-        x = F.relu(self.norm2(x, batch))
+        x = self.norm2(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop2(edge_index, p=0.5)
 
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
-        x = F.relu(self.norm3(x, batch))
+        x = self.norm3(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
 
