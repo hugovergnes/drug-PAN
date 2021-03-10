@@ -60,7 +60,8 @@ class PANConv(MessagePassing):
             AFTERDROP = True
 
         # edge_index has shape [2, E]
-        num_nodes = maybe_num_nodes(edge_index, num_nodes)
+        # num_nodes = maybe_num_nodes(edge_index, num_nodes)
+        num_nodes = x.shape[0]
 
         # Step 1: Path integral
         edge_index, edge_weight = self.panentropy_sparse(edge_index, num_nodes, AFTERDROP, edge_mask_list)
@@ -76,7 +77,7 @@ class PANConv(MessagePassing):
         norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
         norm = norm.mul(edge_weight)
 
-        # save M
+        # save M as a dense matrix
         m_list = norm.mul(edge_weight).view(-1, 1).squeeze()
         m_adj = torch.zeros(x_size0, x_size0, device=edge_index.device)
         m_adj[row, col] = m_list
@@ -99,7 +100,6 @@ class PANConv(MessagePassing):
     def panentropy(self, edge_index, num_nodes):
 
         # sparse to dense
-        # adj = to_dense_adj(edge_index)
         adj = torch.zeros(num_nodes, num_nodes, device=edge_index.device)
         adj[edge_index[0, :], edge_index[1, :]] = 1
 
@@ -133,7 +133,7 @@ class PANConv(MessagePassing):
             if AFTERDROP:
                 indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value * edge_mask_list[i], num_nodes, num_nodes, num_nodes)
             else:
-                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)
+                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)            
             valuetmp = valuetmp * self.panconv_filter_weight[i+1]
             indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
             pan_index = torch.cat((pan_index, indextmp), 1)
@@ -177,7 +177,13 @@ class PANPooling(torch.nn.Module):
             batch = edge_index.new_zeros(x.size(0))
 
         # Path integral
-        num_nodes = maybe_num_nodes(edge_index, num_nodes)
+        ## Assertion test
+        # try:
+        #     assert(maybe_num_nodes(edge_index, num_nodes) == x.shape[0])
+        # except:
+        #     print(maybe_num_nodes(edge_index, num_nodes))
+        #     print(x.shape[0])
+        num_nodes = x.shape[0]
         edge_index, edge_weight = self.panentropy_sparse(edge_index, num_nodes)
 
         # weighted degree
@@ -277,7 +283,6 @@ class PANPooling(torch.nn.Module):
         pan_value = self.panpool_filter_weight[0] * pan_value
 
         for i in range(self.filter_size - 1):
-            #indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
             indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)
             valuetmp = valuetmp * self.panpool_filter_weight[i+1]
             indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
@@ -293,14 +298,9 @@ class PANPooling(torch.nn.Module):
 class PANDropout(torch.nn.Module):
     def __init__(self, filter_size=4):
         super(PANDropout, self).__init__()
-
         self.filter_size =filter_size
 
     def forward(self, edge_index, p=0.5):
-        # p - probability of an element to be zeroed
-
-        # sava all network
-        #edge_mask_list = []
         edge_mask_list = torch.empty(0)
         edge_mask_list.to(edge_index.device)
 
@@ -313,114 +313,3 @@ class PANDropout(torch.nn.Module):
             edge_mask_list = torch.cat([edge_mask_list, edge_mask])
 
         return True, edge_mask_list
-
-
-### build model
-
-class PAN(torch.nn.Module):
-    def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
-        super(PAN, self).__init__()
-        self.conv1 = PANConv(num_node_features, nhid, filter_size)
-        self.pool1 = PANPooling(nhid, filter_size=filter_size)
-##        self.drop1 = PANDropout()
-        self.conv2 = PANConv(nhid, nhid, filter_size=2)
-        self.pool2 = PANPooling(nhid)
-##        self.drop2 = PANDropout()
-        self.conv3 = PANConv(nhid, nhid, filter_size=2)
-        self.pool3 = PANPooling(nhid)
-        
-        self.lin1 = torch.nn.Linear(nhid, nhid//2)
-        self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
-        # self.lin3 = torch.nn.Linear(nhid//4, num_classes)
-        # self.lin3 = torch.nn.Linear(nhid//4, 1)
-        self.lin3 = torch.nn.Linear(nhid, 1)
-
-        self.mlp = torch.nn.Linear(nhid, num_classes)
-
-    def forward(self, data):
-
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        perm_list = list()
-        edge_mask_list = None
-
-        x = self.conv1(x, edge_index)
-        M = self.conv1.m
-        # x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
-#         perm_list.append(perm)
-
-# #        AFTERDROP, edge_mask_list = self.drop1(edge_index, p=0.5)
-#         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
-#         M = self.conv2.m
-#         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
-#         perm_list.append(perm)
-# #
-# ##        AFTERDROP, edge_mask_list = self.drop2(edge_index, p=0.5)
-#         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
-#         M = self.conv3.m
-#         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
-#         perm_list.append(perm)
-        
-        mean = scatter_mean(x, batch, dim=0)
-        x = mean
-        
-#         x = F.relu(self.lin1(x))
-#         x = F.dropout(x, p=0.5, training=self.training)
-#         x = F.relu(self.lin2(x))
-        # x = F.log_softmax(self.lin3(x), dim=-1)
-        x = torch.sigmoid(self.lin3(x))
-
-#        x = self.mlp(x)
-#        x = F.log_softmax(x, dim=-1)
-
-        return x, perm_list
-
-
-class SmallPAN(torch.nn.Module):
-    def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
-        super(SmallPAN, self).__init__()
-        self.conv1 = PANConv(num_node_features, nhid, filter_size)
-        self.pool1 = PANPooling(nhid, filter_size=filter_size)
-        self.drop1 = PANDropout()
-
-        self.conv2 = PANConv(nhid, nhid, filter_size=2)
-        self.pool2 = PANPooling(nhid)
-        self.drop2 = PANDropout()
-
-        self.conv3 = PANConv(nhid, nhid, filter_size=2)
-        self.pool3 = PANPooling(nhid)
-
-        self.lin1 = torch.nn.Linear(nhid, nhid//2)
-        self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
-        self.lin3 = torch.nn.Linear(nhid//4, 1)
-        
-    def forward(self, data):
-
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        perm_list = list()
-        edge_mask_list = None
-
-        x = self.conv1(x, edge_index)
-        M = self.conv1.m
-        x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
-        edge_mask_list = self.drop1(edge_index, p=0.5)
-
-        x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv2.m
-        x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
-        edge_mask_list = self.drop2(edge_index, p=0.5)
-
-        x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv3.m
-        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
-
-        mean = scatter_mean(x, batch, dim=0)
-        x = mean
-
-        x = self.lin1(x)
-        x = self.lin2(x)
-        x = self.lin3(x)
-
-        return x, perm_list

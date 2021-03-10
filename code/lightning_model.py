@@ -196,7 +196,6 @@ class LightningPAN(BaseNet):
             training_loss = np.append(training_loss, results_dict["loss"])
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
-        # acc = accuracy_score(y_true, y_pred)
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
         self.log('rocauc_train', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('train_loss', training_loss.sum().item())
