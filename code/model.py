@@ -169,7 +169,7 @@ class PANPooling(torch.nn.Module):
             #self.weight = torch.tensor([0.7, 0.3], device=self.transform.device)
             self.pan_pool_weight = torch.nn.Parameter(0.5 * torch.ones(2), requires_grad=True)
         else:
-            self.pan_pool_weight = pan_pool_weight
+            self.pan_pool_weight = torch.nn.Parameter(torch.Tensor([pan_pool_weight, 1-pan_pool_weight]), requires_grad=True)
 
 
     def forward(self, x, edge_index, M=None, batch=None, num_nodes=None):

@@ -22,7 +22,7 @@ from Norm import Norm
 
 
 class BaseNet(LightningModule):
-    def __init__(self, criterion=torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor([30]))):
+    def __init__(self, criterion=None):
         super().__init__()
 
         # loading params
@@ -109,23 +109,23 @@ class BaseNet(LightningModule):
         return test_loader
 
 class LightningPAN(BaseNet):
-    def __init__(self, num_node_features, num_classes, nhid, ratio, filter_size):
-        super(LightningPAN, self).__init__()
+    def __init__(self, num_node_features, num_classes, nhid, ratio, pan_pool_weight, criterion_pos_weight, filter_size):
+        super(LightningPAN, self).__init__(criterion=torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor([criterion_pos_weight])))
         self.atom_encoder = AtomEncoder(emb_dim = 32)
 
         self.conv1 = PANConv(32, nhid, filter_size)
         self.norm1 = Norm('gn', nhid)
-        self.pool1 = PANPooling(nhid, filter_size=filter_size)
+        self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
         self.drop1 = PANDropout()
 
         self.conv2 = PANConv(nhid, nhid, filter_size=2)
         self.norm2 = Norm('gn', nhid)
-        self.pool2 = PANPooling(nhid)
+        self.pool2 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight)
         self.drop2 = PANDropout()
 
         self.conv3 = PANConv(nhid, nhid, filter_size=2)
         self.norm3 = Norm('gn', nhid)
-        self.pool3 = PANPooling(nhid)
+        self.pool3 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight)
 
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
         self.bn1 = torch.nn.BatchNorm1d(nhid//2)
@@ -192,7 +192,7 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("HEASDFSD?")
+        print("done?")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
@@ -244,7 +244,7 @@ class LightningPAN(BaseNet):
         y_true = np.array([])
         y_pred = np.array([])
         for results_dict in outputs:
-            test_loss = np.append(test_loss, results_dict['loss'])
+            test_loss = np.append(test_loss, results_dict['loss'].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
