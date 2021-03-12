@@ -192,11 +192,8 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("HE?")
+        print("HEASDFSD?")
         for results_dict in outputs:
-            print(results_dict['loss'])
-            print(results_dict['y_true'])
-            print(results_dict['y_pred'])
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
