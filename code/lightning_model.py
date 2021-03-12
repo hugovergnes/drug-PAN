@@ -192,8 +192,12 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
+        print("HE?")
         for results_dict in outputs:
-            training_loss = np.append(training_loss, results_dict["loss"])
+            print(results_dict['loss'])
+            print(results_dict['y_true'])
+            print(results_dict['y_pred'])
+            training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
@@ -218,9 +222,9 @@ class LightningPAN(BaseNet):
         y_true = np.array([])
         y_pred = np.array([])
         for results_dict in outputs:
-            validation_loss = np.append(validation_loss, results_dict["loss"])
-            y_true = np.append(y_true, results_dict['y_true'])
-            y_pred = np.append(y_pred, results_dict['y_pred'])
+            validation_loss = np.append(validation_loss, results_dict["loss"].to('cpu').detach().numpy())
+            y_true = np.append(y_true, results_dict['y_true'].to('cpu').detach().numpy())
+            y_pred = np.append(y_pred, results_dict['y_pred'].to('cpu').detach().numpy())
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
         self.log('rocauc_eval', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('validation_loss', validation_loss.sum().item())
