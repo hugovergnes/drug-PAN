@@ -31,16 +31,17 @@ class BaseNet(LightningModule):
         self.configuration = parameters
 
        
-        self.save_hyperparameters(
-            dict(
-                batch_size = parameters["batch_size"],
-                lr=parameters["learning_rate"],
-                weight_decay=parameters["weight_decay"],
-                num_workers=parameters["num_workers"],
-                criterion=criterion,
-                epochs=parameters["epochs"],
-            )
-        )
+        # self.save_hyperparameters(
+        #     dict(
+        #         batch_size = parameters["batch_size"],
+        #         lr=parameters["learning_rate"],
+        #         weight_decay=parameters["weight_decay"],
+        #         num_workers=parameters["num_workers"],
+        #         criterion=criterion,
+        #         epochs=parameters["epochs"],
+        #     )
+        # )
+        self.save_hyperparameters()
         
         self._train_data = None
         self._collate_fn = None
@@ -111,6 +112,9 @@ class BaseNet(LightningModule):
 class LightningPAN(BaseNet):
     def __init__(self, num_node_features, num_classes, nhid, ratio, pan_pool_weight, criterion_pos_weight, filter_size):
         super(LightningPAN, self).__init__(criterion=torch.nn.BCEWithLogitsLoss(pos_weight = torch.tensor([criterion_pos_weight])))
+
+        self.save_hyperparameters()
+
         self.atom_encoder = AtomEncoder(emb_dim = 32)
 
         self.conv1 = PANConv(32, nhid, filter_size)
@@ -118,20 +122,22 @@ class LightningPAN(BaseNet):
         self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
         self.drop1 = PANDropout()
 
-        self.conv2 = PANConv(nhid, nhid, filter_size=2)
-        self.norm2 = Norm('gn', nhid)
-        self.pool2 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        nhid2 = nhid//2
+        self.conv2 = PANConv(nhid, nhid2, filter_size=2)
+        self.norm2 = Norm('gn', nhid2)
+        self.pool2 = PANPooling(nhid2, ratio=ratio, pan_pool_weight=pan_pool_weight)
         self.drop2 = PANDropout()
 
-        self.conv3 = PANConv(nhid, nhid, filter_size=2)
-        self.norm3 = Norm('gn', nhid)
-        self.pool3 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        nhid3 = nhid//4
+        self.conv3 = PANConv(nhid2, nhid3, filter_size=2)
+        self.norm3 = Norm('gn', nhid3)
+        self.pool3 = PANPooling(nhid3, ratio=ratio, pan_pool_weight=pan_pool_weight)
 
-        self.lin1 = torch.nn.Linear(nhid, nhid//2)
-        self.bn1 = torch.nn.BatchNorm1d(nhid//2)
-        self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
-        self.bn2 = torch.nn.BatchNorm1d(nhid//4)
-        self.lin3 = torch.nn.Linear(nhid//4, 1)
+        self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
+        self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
+        self.lin2 = torch.nn.Linear(nhid3//2, nhid3//4)
+        self.bn2 = torch.nn.BatchNorm1d(nhid3//4)
+        self.lin3 = torch.nn.Linear(nhid3//4, 1)
         
     def forward(self, data):
 
@@ -192,7 +198,7 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("done?")
+        print("hi?")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
@@ -209,8 +215,8 @@ class LightningPAN(BaseNet):
                 pred, _ = self(batch)
                 loss = self.criterion(pred, batch.y.float())
 
-            y_true = batch.y.view(pred.shape).detach().cpu()
-            y_pred = pred.detach().cpu()
+            y_true = batch.y.view(pred.shape).detach().cpu().numpy()
+            y_pred = pred.detach().cpu().numpy()
 
         return {"loss": loss, "y_true": y_true, "y_pred": y_pred}
     
@@ -220,8 +226,8 @@ class LightningPAN(BaseNet):
         y_pred = np.array([])
         for results_dict in outputs:
             validation_loss = np.append(validation_loss, results_dict["loss"].to('cpu').detach().numpy())
-            y_true = np.append(y_true, results_dict['y_true'].to('cpu').detach().numpy())
-            y_pred = np.append(y_pred, results_dict['y_pred'].to('cpu').detach().numpy())
+            y_true = np.append(y_true, results_dict['y_true'])
+            y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
         self.log('rocauc_eval', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('validation_loss', validation_loss.sum().item())

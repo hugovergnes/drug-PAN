@@ -3,13 +3,13 @@
     "phi": 0.3,
     "runs": 1,
     "num_workers": 0,
-    "batch_size": 64,
-    "maximum_path_size":4,
+    "batch_size": 128,
+    "maximum_path_size":3,
     "learning_rate":0.001,
-    "weight_decay": 1e-3,
-    "pool_ratio":0.6, 
-    "pan_pool_weight": 0.6, 
+    "weight_decay": 5e-4,
+    "pool_ratio":0.5, 
+    "pan_pool_weight": 0.5, 
     "criterion_pos_weight": 25,
-    "nhid": 128,
-    "epochs": 100
+    "nhid": 512,
+    "epochs": 150
 }
