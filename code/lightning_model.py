@@ -118,19 +118,19 @@ class LightningPAN(BaseNet):
         self.atom_encoder = AtomEncoder(emb_dim = 32)
 
         self.conv1 = PANConv(32, nhid, filter_size)
-        # self.norm1 = Norm('gn', nhid)
+        self.norm1 = Norm('gn', nhid)
         self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
         # self.drop1 = PANDropout()
 
         nhid2 = nhid//2
         self.conv2 = PANConv(nhid, nhid2, filter_size=filter_size)
-        # self.norm2 = Norm('gn', nhid2)
+        self.norm2 = Norm('gn', nhid2)
         self.pool2 = PANPooling(nhid2, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
         # self.drop2 = PANDropout()
 
         nhid3 = nhid//4
         self.conv3 = PANConv(nhid2, nhid3, filter_size=filter_size)
-        # self.norm3 = Norm('gn', nhid3)
+        self.norm3 = Norm('gn', nhid3)
         self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
 
         # self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
@@ -150,21 +150,21 @@ class LightningPAN(BaseNet):
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
-        # x = self.norm1(x, batch)
+        x = self.norm1(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         # edge_mask_list = self.drop1(edge_index, p=0.5)
 
         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv2.m
-        # x = self.norm2(x, batch)
+        x = self.norm2(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
         # edge_mask_list = self.drop2(edge_index, p=0.5)
 
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
-        # x = self.norm3(x, batch)
+        x = self.norm3(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
 
@@ -201,7 +201,7 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("basemodel-posweight-meanloss")
+        print("improved-meanloss-Norms-poolweight")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
