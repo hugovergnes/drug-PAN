@@ -201,7 +201,7 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("basemodel-posweight")
+        print("basemodel-posweight-meanloss")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
@@ -209,7 +209,7 @@ class LightningPAN(BaseNet):
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
 
         self.log('rocauc_train', (self.evaluator.eval(input_dict))['rocauc'])
-        self.log('train_loss', training_loss.sum().item())
+        self.log('train_loss', training_loss.mean().item())
     
     def validation_step(self, batch, batch_idx):
         if batch.x.shape[0] == 1:
@@ -235,7 +235,7 @@ class LightningPAN(BaseNet):
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
 
         self.log('rocauc_eval', (self.evaluator.eval(input_dict))['rocauc'])
-        self.log('validation_loss', validation_loss.sum().item())
+        self.log('validation_loss', validation_loss.mean().item())
 
 
     def test_step(self, batch, batch_idx):
@@ -261,4 +261,4 @@ class LightningPAN(BaseNet):
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
 
         self.log('rocauc_test', (self.evaluator.eval(input_dict))['rocauc'])
-        self.log('test_loss', test_loss.sum().item())
+        self.log('test_loss', test_loss.mean().item())
