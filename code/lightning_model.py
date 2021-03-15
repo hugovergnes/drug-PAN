@@ -118,26 +118,28 @@ class LightningPAN(BaseNet):
         self.atom_encoder = AtomEncoder(emb_dim = 32)
 
         self.conv1 = PANConv(32, nhid, filter_size)
-        self.norm1 = Norm('gn', nhid)
+        # self.norm1 = Norm('gn', nhid)
         self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
-        self.drop1 = PANDropout()
+        # self.drop1 = PANDropout()
 
         nhid2 = nhid//2
-        self.conv2 = PANConv(nhid, nhid2, filter_size=2)
-        self.norm2 = Norm('gn', nhid2)
-        self.pool2 = PANPooling(nhid2, ratio=ratio, pan_pool_weight=pan_pool_weight)
-        self.drop2 = PANDropout()
+        self.conv2 = PANConv(nhid, nhid2, filter_size=filter_size)
+        # self.norm2 = Norm('gn', nhid2)
+        self.pool2 = PANPooling(nhid2, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
+        # self.drop2 = PANDropout()
 
         nhid3 = nhid//4
-        self.conv3 = PANConv(nhid2, nhid3, filter_size=2)
-        self.norm3 = Norm('gn', nhid3)
-        self.pool3 = PANPooling(nhid3, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        self.conv3 = PANConv(nhid2, nhid3, filter_size=filter_size)
+        # self.norm3 = Norm('gn', nhid3)
+        self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
 
-        self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
-        self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
-        self.lin2 = torch.nn.Linear(nhid3//2, nhid3//4)
-        self.bn2 = torch.nn.BatchNorm1d(nhid3//4)
-        self.lin3 = torch.nn.Linear(nhid3//4, 1)
+        # self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
+        # self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
+        # self.lin2 = torch.nn.Linear(nhid3//2, nhid3//4)
+        # self.bn2 = torch.nn.BatchNorm1d(nhid3//4)
+        # self.lin3 = torch.nn.Linear(nhid3//4, 1)
+
+        self.lin1 = torch.nn.Linear(nhid3, 1)
         
     def forward(self, data):
 
@@ -148,31 +150,32 @@ class LightningPAN(BaseNet):
 
         x = self.conv1(x, edge_index)
         M = self.conv1.m
-        x = self.norm1(x, batch)
+        # x = self.norm1(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
-        edge_mask_list = self.drop1(edge_index, p=0.5)
+        # edge_mask_list = self.drop1(edge_index, p=0.5)
 
         x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv2.m
-        x = self.norm2(x, batch)
+        # x = self.norm2(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
-        edge_mask_list = self.drop2(edge_index, p=0.5)
+        # edge_mask_list = self.drop2(edge_index, p=0.5)
 
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
-        x = self.norm3(x, batch)
+        # x = self.norm3(x, batch)
         x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
         perm_list.append(perm)
 
         mean = scatter_mean(x, batch, dim=0)
         x = mean
 
-        x = F.relu(self.bn1(self.lin1(x)))
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = F.relu(self.bn2(self.lin2(x)))
-        x = self.lin3(x)
+        # x = F.relu(self.bn1(self.lin1(x)))
+        # x = F.dropout(x, p=0.5, training=self.training)
+        # x = F.relu(self.bn2(self.lin2(x)))
+        # x = self.lin3(x)
+        x = self.lin1(x)
 
         return x, perm_list
     
@@ -198,12 +201,13 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("hi?")
+        print("basemodel-posweight")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
+
         self.log('rocauc_train', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('train_loss', training_loss.sum().item())
     
@@ -229,6 +233,7 @@ class LightningPAN(BaseNet):
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
+
         self.log('rocauc_eval', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('validation_loss', validation_loss.sum().item())
 
@@ -254,5 +259,6 @@ class LightningPAN(BaseNet):
             y_true = np.append(y_true, results_dict['y_true'])
             y_pred = np.append(y_pred, results_dict['y_pred'])
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
+
         self.log('rocauc_test', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('test_loss', test_loss.sum().item())
