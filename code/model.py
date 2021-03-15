@@ -44,27 +44,23 @@ import time
 ### define convolution
 
 class PANConv(MessagePassing):
-    def __init__(self, in_channels, out_channels, filter_size=4, panconv_filter_weight=None):
+    def __init__(self, in_channels, out_channels, panentropy_fn, filter_size=4 ,panconv_filter_weight=None):
         super(PANConv, self).__init__(aggr='add')  # "Add" aggregation.
         self.lin = torch.nn.Linear(in_channels, out_channels)
         self.m = None
         self.filter_size = filter_size
         if panconv_filter_weight is None:
             self.panconv_filter_weight = torch.nn.Parameter(0.5 * torch.ones(filter_size), requires_grad=True)
+        self.panentropy_sparse = panentropy_fn
 
-    def forward(self, x, edge_index, num_nodes=None, edge_mask_list=None):
+    def forward(self, x, edge_index, edge_value, num_nodes=None, edge_mask_list=None):
         # x has shape [N, in_channels]
-        if edge_mask_list is None:
-            AFTERDROP = False
-        else:
-            AFTERDROP = True
 
         # edge_index has shape [2, E]
-        # num_nodes = maybe_num_nodes(edge_index, num_nodes)
         num_nodes = x.shape[0]
 
         # Step 1: Path integral
-        edge_index, edge_weight = self.panentropy_sparse(edge_index, num_nodes, AFTERDROP, edge_mask_list)
+        edge_index, edge_weight = self.panentropy_sparse(edge_index, edge_value, num_nodes, self.panconv_filter_weight, edge_mask_list)
 
         # Step 2: Linearly transform node feature matrix.
         x = self.lin(x.float())
@@ -97,57 +93,13 @@ class PANConv(MessagePassing):
         # Step 5: Return new node embeddings.
         return aggr_out
 
-    def panentropy(self, edge_index, num_nodes):
-
-        # sparse to dense
-        adj = torch.zeros(num_nodes, num_nodes, device=edge_index.device)
-        adj[edge_index[0, :], edge_index[1, :]] = 1
-
-        # iteratively add weighted matrix power
-        adjtmp = torch.eye(num_nodes, device=edge_index.device)
-        pan_adj = self.panconv_filter_weight[0] * torch.eye(num_nodes, device=edge_index.device)
-
-        for i in range(self.filter_size - 1):
-            adjtmp = torch.mm(adjtmp, adj)
-            pan_adj = pan_adj + self.panconv_filter_weight[i+1] * adjtmp
-
-        # dense to sparse
-        edge_index_new = torch.nonzero(pan_adj).t()
-        edge_weight_new = pan_adj[edge_index_new[0], edge_index_new[1]]
-
-        return edge_index_new, edge_weight_new
-
-    def panentropy_sparse(self, edge_index, num_nodes, AFTERDROP, edge_mask_list):
-
-        edge_value = torch.ones(edge_index.size(1), device=edge_index.device)
-        edge_index, edge_value = coalesce(edge_index, edge_value, num_nodes, num_nodes)
-
-        # iteratively add weighted matrix power
-        pan_index, pan_value = eye(num_nodes, device=edge_index.device)
-        indextmp = pan_index.clone().to(edge_index.device)
-        valuetmp = pan_value.clone().to(edge_index.device)
-
-        pan_value = self.panconv_filter_weight[0] * pan_value
-
-        for i in range(self.filter_size - 1):
-            if AFTERDROP:
-                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value * edge_mask_list[i], num_nodes, num_nodes, num_nodes)
-            else:
-                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)            
-            valuetmp = valuetmp * self.panconv_filter_weight[i+1]
-            indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
-            pan_index = torch.cat((pan_index, indextmp), 1)
-            pan_value = torch.cat((pan_value, valuetmp))
-
-        return coalesce(pan_index, pan_value, num_nodes, num_nodes, op='add')
-
 
 ### define pooling
 
 class PANPooling(torch.nn.Module):
     r""" General Graph pooling layer based on PAN, which can work with all layers.
     """
-    def __init__(self, in_channels, ratio=0.5, pan_pool_weight=None, min_score=None, multiplier=1,
+    def __init__(self, in_channels, panentropy_fn, ratio=0.5, pan_pool_weight=None, min_score=None, multiplier=1,
                  nonlinearity=torch.tanh, filter_size=3, panpool_filter_weight=None):
         super(PANPooling, self).__init__()
 
@@ -160,6 +112,8 @@ class PANPooling(torch.nn.Module):
         self.filter_size = filter_size
         if panpool_filter_weight is None:
             self.panpool_filter_weight = torch.nn.Parameter(0.5 * torch.ones(filter_size), requires_grad=True)
+        
+        self.panentropy_sparse = panentropy_fn
 
         # learnable parameters
         self.transform = Parameter(torch.ones(in_channels), requires_grad=True)
@@ -172,19 +126,12 @@ class PANPooling(torch.nn.Module):
             self.pan_pool_weight = torch.nn.Parameter(torch.Tensor([pan_pool_weight, 1-pan_pool_weight]), requires_grad=True)
 
 
-    def forward(self, x, edge_index, M=None, batch=None, num_nodes=None):
+    def forward(self, x, edge_index, edge_value, M=None, batch=None, num_nodes=None):
         if batch is None:
             batch = edge_index.new_zeros(x.size(0))
 
-        # Path integral
-        ## Assertion test
-        # try:
-        #     assert(maybe_num_nodes(edge_index, num_nodes) == x.shape[0])
-        # except:
-        #     print(maybe_num_nodes(edge_index, num_nodes))
-        #     print(x.shape[0])
         num_nodes = x.shape[0]
-        edge_index, edge_weight = self.panentropy_sparse(edge_index, num_nodes)
+        edge_index, edge_weight = self.panentropy_sparse(edge_index, edge_value, num_nodes, self.pan_pool_weight)
 
         # weighted degree
         num_nodes = x.size(0)
@@ -269,29 +216,6 @@ class PANPooling(torch.nn.Module):
             edge_weight = edge_weight[mask]
 
         return torch.stack([row, col], dim=0), edge_weight
-
-    def panentropy_sparse(self, edge_index, num_nodes):
-
-        edge_value = torch.ones(edge_index.size(1), device=edge_index.device)
-        edge_index, edge_value = coalesce(edge_index, edge_value, num_nodes, num_nodes)
-
-        # iteratively add weighted matrix power
-        pan_index, pan_value = eye(num_nodes, device=edge_index.device)
-        indextmp = pan_index.clone().to(edge_index.device)
-        valuetmp = pan_value.clone().to(edge_index.device)
-
-        pan_value = self.panpool_filter_weight[0] * pan_value
-
-        for i in range(self.filter_size - 1):
-            indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)
-            valuetmp = valuetmp * self.panpool_filter_weight[i+1]
-            indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
-            pan_index = torch.cat((pan_index, indextmp), 1)
-            pan_value = torch.cat((pan_value, valuetmp))
-
-        return coalesce(pan_index, pan_value, num_nodes, num_nodes, op='add')
-
-
 
 ### define dropout
 

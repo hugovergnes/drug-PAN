@@ -2,7 +2,7 @@
 import json
 import numpy as np
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
-from ogb.graphproppred.mol_encoder import AtomEncoder
+from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 from sklearn.metrics import accuracy_score
 
 # torch
@@ -14,6 +14,10 @@ from torch_geometric.data import DataLoader
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+
+from torch_sparse import spspmm
+from torch_sparse import coalesce
+from torch_sparse import eye
 
 from ogb.graphproppred import PygGraphPropPredDataset, Evaluator
 
@@ -116,54 +120,100 @@ class LightningPAN(BaseNet):
         self.save_hyperparameters()
 
         self.atom_encoder = AtomEncoder(emb_dim = 32)
+        self.bond_encoder = BondEncoder(emb_dim = 1)
 
-        self.conv1 = PANConv(32, nhid, filter_size)
-        self.norm1 = Norm('gn', nhid)
-        self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
+        self.conv1 = PANConv(32, nhid, self.panentropy_sparse, filter_size=filter_size)
+        self.norm1 = Norm(nhid)
+        self.pool1 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
         self.drop1 = PANDropout()
 
-        nhid2 = nhid//2
-        self.conv2 = PANConv(nhid, nhid2, filter_size=2)
-        self.norm2 = Norm('gn', nhid2)
-        self.pool2 = PANPooling(nhid2, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        self.conv2 = PANConv(nhid, nhid, self.panentropy_sparse, filter_size=2)
+        self.norm2 = Norm(nhid)
+        self.pool2 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight)
         self.drop2 = PANDropout()
 
-        nhid3 = nhid//4
-        self.conv3 = PANConv(nhid2, nhid3, filter_size=2)
-        self.norm3 = Norm('gn', nhid3)
-        self.pool3 = PANPooling(nhid3, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        self.conv3 = PANConv(nhid, nhid, self.panentropy_sparse, filter_size=2)
+        self.norm3 = Norm(nhid)
+        self.pool3 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight)
 
-        self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
-        self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
-        self.lin2 = torch.nn.Linear(nhid3//2, nhid3//4)
-        self.bn2 = torch.nn.BatchNorm1d(nhid3//4)
-        self.lin3 = torch.nn.Linear(nhid3//4, 1)
+        self.lin1 = torch.nn.Linear(nhid, nhid//2)
+        self.bn1 = torch.nn.BatchNorm1d(nhid//2)
+        self.lin2 = torch.nn.Linear(nhid//2, nhid//4)
+        self.bn2 = torch.nn.BatchNorm1d(nhid//4)
+        self.lin3 = torch.nn.Linear(nhid//4, 1)
+
+    def panentropy_sparse(self, edge_index, edge_value, num_nodes, weights, edge_mask_list=None):
+        
+        edge_index, edge_value = coalesce(edge_index, edge_value, num_nodes, num_nodes)
+
+        # iteratively add weighted matrix power
+        pan_index, pan_value = eye(num_nodes, device=edge_index.device)
+        indextmp = pan_index.clone().to(edge_index.device)
+        valuetmp = pan_value.clone().to(edge_index.device)
+
+        pan_value = weights[0] * pan_value
+
+        for i in range(weights.shape[0] - 1):
+            if edge_mask_list is not None:
+                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value * edge_mask_list[i], num_nodes, num_nodes, num_nodes)
+            else:
+                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)            
+            valuetmp = valuetmp * weights[i+1]
+            indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
+            pan_index = torch.cat((pan_index, indextmp), 1)
+            pan_value = torch.cat((pan_value, valuetmp))
+
+        return coalesce(pan_index, pan_value, num_nodes, num_nodes, op='add')
         
     def forward(self, data):
 
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x, edge_index, edge_attribute, batch = data.x, data.edge_index, data.edge_attr, data.batch
+        
         x = self.atom_encoder(x)
+        if self.configuration["Use Edge features"]:
+            edge_value = self.bond_encoder(edge_attribute).view(-1)
+        else:
+            edge_value = torch.ones(edge_index.size(1), device=edge_index.device)
+
         perm_list = list()
         edge_mask_list = None
 
-        x = self.conv1(x, edge_index)
+        x = self.conv1(x, edge_index, edge_value)
         M = self.conv1.m
         x = self.norm1(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool1(x, edge_index, batch=batch, M=M)
+
+        # if not self.configuration["Use Edge features"]:
+        #     edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+        
+        x, edge_index, edge_value, batch, perm, score_perm = self.pool1(x, edge_index, edge_value, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop1(edge_index, p=0.5)
 
-        x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
+        if not self.configuration["Use Edge features"]:
+            edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+
+        x = self.conv2(x, edge_index, edge_value, edge_mask_list=edge_mask_list)
         M = self.conv2.m
         x = self.norm2(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
+
+        if not self.configuration["Use Edge features"]:
+            edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+
+        x, edge_index, edge_value, batch, perm, score_perm = self.pool2(x, edge_index, edge_value, batch=batch, M=M)
         perm_list.append(perm)
         edge_mask_list = self.drop2(edge_index, p=0.5)
 
-        x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
+        if not self.configuration["Use Edge features"]:
+            edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+
+        x = self.conv3(x, edge_index, edge_value, edge_mask_list=edge_mask_list)
         M = self.conv3.m
         x = self.norm3(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
+
+        if not self.configuration["Use Edge features"]:
+            edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+            
+        x, edge_index, edge_value, batch, perm, score_perm = self.pool3(x, edge_index, edge_value, batch=batch, M=M)
         perm_list.append(perm)
 
         mean = scatter_mean(x, batch, dim=0)
@@ -198,7 +248,6 @@ class LightningPAN(BaseNet):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("hi?")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
@@ -231,7 +280,6 @@ class LightningPAN(BaseNet):
         input_dict = {"y_true": y_true.reshape(-1, 1), "y_pred": y_pred.reshape(-1, 1)}
         self.log('rocauc_eval', (self.evaluator.eval(input_dict))['rocauc'])
         self.log('validation_loss', validation_loss.sum().item())
-
 
     def test_step(self, batch, batch_idx):
         if batch.x.shape[0] == 1:
