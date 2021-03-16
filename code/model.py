@@ -120,7 +120,6 @@ class PANPooling(torch.nn.Module):
 
         # Weights used for the Pooling Procedure
         if pan_pool_weight is None:
-            #self.weight = torch.tensor([0.7, 0.3], device=self.transform.device)
             self.pan_pool_weight = torch.nn.Parameter(0.5 * torch.ones(2), requires_grad=True)
         else:
             self.pan_pool_weight = torch.nn.Parameter(torch.Tensor([pan_pool_weight, 1-pan_pool_weight]), requires_grad=True)
@@ -220,7 +219,7 @@ class PANPooling(torch.nn.Module):
 ### define dropout
 
 class PANDropout(torch.nn.Module):
-    def __init__(self, filter_size=4):
+    def __init__(self, filter_size = 4):
         super(PANDropout, self).__init__()
         self.filter_size =filter_size
 
@@ -231,9 +230,9 @@ class PANDropout(torch.nn.Module):
         num = edge_index.size(1)
         bern = torch.distributions.bernoulli.Bernoulli(torch.tensor([p]))
 
-        for i in range(self.filter_size - 1):
-            edge_mask = bern.sample([num]).squeeze()
-            #edge_mask_list.append(edge_mask)
-            edge_mask_list = torch.cat([edge_mask_list, edge_mask])
+        # for i in range(self.filter_size - 1):
+        #     edge_mask = bern.sample([num]).squeeze()
+        #     edge_mask_list = torch.cat([edge_mask_list, edge_mask])
 
-        return True, edge_mask_list
+        # return edge_mask_list
+        return bern.sample([num]).squeeze()
