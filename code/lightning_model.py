@@ -70,7 +70,7 @@ class BaseNet(LightningModule):
         # epochs=self.epochs, steps_per_epoch=2)
         # lmbda = lambda epoch: 0.98
         # scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lmbda, last_epoch=-1, verbose=False)
-        return [optimizer] #,[scheduler]
+        return [optimizer]#, [scheduler]
         
     def train_dataloader(self):
         dataset = PygGraphPropPredDataset(name='ogbg-molhiv')
@@ -124,17 +124,17 @@ class LightningPAN(BaseNet):
 
         self.conv1 = PANConv(32, nhid, self.panentropy_sparse, filter_size=filter_size)
         self.norm1 = Norm(nhid)
-        self.pool1 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
+        self.pool1 = PANPooling(nhid, self.panentropy_sparse, filter_size=filter_size)
         self.drop1 = PANDropout()
 
         self.conv2 = PANConv(nhid, nhid, self.panentropy_sparse, filter_size=2)
         self.norm2 = Norm(nhid)
-        self.pool2 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        self.pool2 = PANPooling(nhid, self.panentropy_sparse)
         self.drop2 = PANDropout()
 
         self.conv3 = PANConv(nhid, nhid, self.panentropy_sparse, filter_size=2)
         self.norm3 = Norm(nhid)
-        self.pool3 = PANPooling(nhid, self.panentropy_sparse, ratio=ratio, pan_pool_weight=pan_pool_weight)
+        self.pool3 = PANPooling(nhid, self.panentropy_sparse)
 
         self.lin1 = torch.nn.Linear(nhid, nhid//2)
         self.bn1 = torch.nn.BatchNorm1d(nhid//2)
@@ -147,18 +147,19 @@ class LightningPAN(BaseNet):
         edge_index, edge_value = coalesce(edge_index, edge_value, num_nodes, num_nodes)
 
         # iteratively add weighted matrix power
+        # Declare identity matrix
         pan_index, pan_value = eye(num_nodes, device=edge_index.device)
         indextmp = pan_index.clone().to(edge_index.device)
         valuetmp = pan_value.clone().to(edge_index.device)
 
         pan_value = weights[0] * pan_value
 
-        for i in range(weights.shape[0] - 1):
+        for i in range(1, weights.shape[0]):
             if edge_mask_list is not None:
-                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value * edge_mask_list[i], num_nodes, num_nodes, num_nodes)
+                indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value * edge_mask_list, num_nodes, num_nodes, num_nodes)
             else:
                 indextmp, valuetmp = spspmm(indextmp, valuetmp, edge_index, edge_value, num_nodes, num_nodes, num_nodes)            
-            valuetmp = valuetmp * weights[i+1]
+            valuetmp = valuetmp * weights[i]
             indextmp, valuetmp = coalesce(indextmp, valuetmp, num_nodes, num_nodes)
             pan_index = torch.cat((pan_index, indextmp), 1)
             pan_value = torch.cat((pan_value, valuetmp))
@@ -182,8 +183,8 @@ class LightningPAN(BaseNet):
         M = self.conv1.m
         x = self.norm1(x, batch)
 
-        # if not self.configuration["Use Edge features"]:
-        #     edge_value = torch.ones(edge_value.shape, device=edge_index.device)
+        if not self.configuration["Use Edge features"]:
+            edge_value = torch.ones(edge_value.shape, device=edge_index.device)
         
         x, edge_index, edge_value, batch, perm, score_perm = self.pool1(x, edge_index, edge_value, batch=batch, M=M)
         perm_list.append(perm)

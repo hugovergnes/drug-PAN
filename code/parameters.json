@@ -7,7 +7,7 @@
     "maximum_path_size":4,
     "learning_rate":0.001,
     "weight_decay": 1e-3,
-    "pool_ratio":0.6, 
+    "pool_ratio":0.5, 
     "pan_pool_weight": 0.5, 
     "criterion_pos_weight": 30,
     "nhid": 64,
