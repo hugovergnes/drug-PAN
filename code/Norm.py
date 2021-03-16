@@ -6,13 +6,6 @@ from torch_scatter import scatter_mean
 class Norm(nn.Module):
     def __init__(self, hidden_dim=300, print_info=None):
         super(Norm, self).__init__()
-        # assert norm_type in ['bn', 'gn', None]
-        #self.norm = None
-        #self.print_info = print_info
-        # if norm_type == 'bn':
-        #     self.norm = nn.BatchNorm1d(hidden_dim)
-        # elif norm_type == 'gn':
-        #self.norm = norm_type
         self.alpha = nn.Parameter(torch.ones(hidden_dim))
         self.weight = nn.Parameter(torch.ones(hidden_dim))
         self.bias = nn.Parameter(torch.zeros(hidden_dim))
