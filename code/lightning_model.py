@@ -131,7 +131,7 @@ class LightningPAN(BaseNet):
         nhid3 = nhid//4
         self.conv3 = PANConv(nhid2, nhid3, filter_size=filter_size)
         # self.norm3 = Norm('gn', nhid3)
-        self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
+        # self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
 
         # self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
         # self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
@@ -165,8 +165,8 @@ class LightningPAN(BaseNet):
         x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
         M = self.conv3.m
         # x = self.norm3(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
+        # x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
+        # perm_list.append(perm)
 
         mean = scatter_mean(x, batch, dim=0)
         x = mean
@@ -193,15 +193,15 @@ class LightningPAN(BaseNet):
         self.log("pool1_weight_diagM", self.pool1.pan_pool_weight[1])
         self.log("pool2_weight_X", self.pool2.pan_pool_weight[0])
         self.log("pool2_weight_diagM", self.pool2.pan_pool_weight[1])
-        self.log("pool3_weight_X", self.pool3.pan_pool_weight[0])
-        self.log("pool3_weight_diagM", self.pool3.pan_pool_weight[1])
+        # self.log("pool3_weight_X", self.pool3.pan_pool_weight[0])
+        # self.log("pool3_weight_diagM", self.pool3.pan_pool_weight[1])
         return {"loss": loss, "y_true": y_true, "y_pred": y_pred}
 
     def training_epoch_end(self, outputs):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("basemodel-posweight-meanloss")
+        print("basemodel-nopoolend-posweight-meanloss")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
