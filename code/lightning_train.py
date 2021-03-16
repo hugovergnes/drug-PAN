@@ -31,9 +31,9 @@ criterion_pos_weight = parameters['criterion_pos_weight']
 LearningRateMonitor_Params = {'logging_interval': 'epoch'}
 
 checkpoint_callback = ModelCheckpoint(
-    monitor='validation_loss',
+    monitor='rocauc_eval',
     save_top_k=1,
-    mode='min',
+    mode='max',
     dirpath='models/',
     filename='PAN-{epoch:02d}-{validation_loss:.2f}-{rocauc_eval:.2f}',
     period=1
@@ -48,18 +48,18 @@ model = LightningPAN(9, 1, nhid=nhid,
                      filter_size=filter_size)
 
 lr_logger = LearningRateMonitor(**LearningRateMonitor_Params)
-# neptune_logger = NeptuneLogger(
-#                 api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiMDk5YjVmYzYtNTU0My00MzhkLWJiYTAtMGM4ZGVhZmEyMTZiIn0=",
-#                 project_name='hvergnes/PAN',
-#                 close_after_fit=False,
-#                 params=parameters, # your hyperparameters, immutable
-#                 tags=['PAN', 'Clean code', 'Only first conv see edge weights', 'Pool Ratio=0.2'],  # tags
-#                 upload_source_files=["parameters.json", "lightning_model.py"]
-#                 )
+neptune_logger = NeptuneLogger(
+                api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiMDk5YjVmYzYtNTU0My00MzhkLWJiYTAtMGM4ZGVhZmEyMTZiIn0=",
+                project_name='hvergnes/PAN',
+                close_after_fit=False,
+                params=parameters, # your hyperparameters, immutable
+                tags=['PAN', 'Best model'],  # tags
+                upload_source_files=["parameters.json", "lightning_model.py"]
+                )
 
 trainer = Trainer(
     max_epochs=epochs,
-    # logger=neptune_logger,
+    logger=neptune_logger,
     callbacks=[lr_logger, checkpoint_callback],
     # fast_dev_run=True,
 )
