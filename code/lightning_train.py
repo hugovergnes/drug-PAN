@@ -53,17 +53,21 @@ neptune_logger = NeptuneLogger(
                 project_name='hvergnes/PAN',
                 close_after_fit=False,
                 params=parameters, # your hyperparameters, immutable
-                tags=['PAN', 'Best model'],  # tags
+                tags=['PAN', 'auto lr'],  # tags
                 upload_source_files=["parameters.json", "lightning_model.py"]
                 )
 
 trainer = Trainer(
     max_epochs=epochs,
+     auto_lr_find=True,
     logger=neptune_logger,
     callbacks=[lr_logger, checkpoint_callback],
     # fast_dev_run=True,
 )
 
+# lr_finder = trainer.tuner.lr_find(model, min_lr=10e-9, max_lr = 2, num_training=1000, train_dataloader=model._train_loader)
+# model.lr = lr_finder.suggestion()
+trainer.tune(model)
 trainer.fit(model)
 trainer.test(model)
 

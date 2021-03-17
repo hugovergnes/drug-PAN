@@ -68,9 +68,9 @@ class BaseNet(LightningModule):
                           weight_decay= self.weight_decay)
         # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=self.lr,
         # epochs=self.epochs, steps_per_epoch=2)
-        # lmbda = lambda epoch: 0.98
+        # lmbda = lambda epoch: 0.99
         # scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lmbda, last_epoch=-1, verbose=False)
-        return [optimizer]#, [scheduler]
+        return optimizer#, [scheduler]
         
     def train_dataloader(self):
         dataset = PygGraphPropPredDataset(name='ogbg-molhiv')
@@ -223,6 +223,7 @@ class LightningPAN(BaseNet):
         x = F.relu(self.bn1(self.lin1(x)))
         x = F.dropout(x, p=0.5, training=self.training)
         x = F.relu(self.bn2(self.lin2(x)))
+        x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin3(x)
 
         return x, perm_list
