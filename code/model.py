@@ -224,6 +224,9 @@ class PANDropout(torch.nn.Module):
         self.filter_size =filter_size
 
     def forward(self, edge_index, p=0.5):
+        # Do not mask during validation
+        if not self.training:
+            return None
         edge_mask_list = torch.empty(0)
         edge_mask_list.to(edge_index.device)
 
