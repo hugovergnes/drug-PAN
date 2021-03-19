@@ -115,30 +115,30 @@ class LightningPAN(BaseNet):
 
         self.save_hyperparameters()
 
-        self.atom_encoder = AtomEncoder(emb_dim = 32)
+        self.atom_encoder = AtomEncoder(emb_dim = 128)
 
-        self.conv1 = PANConv(32, nhid, filter_size)
+        self.conv1 = PANConv(128, nhid, filter_size)
         self.norm1 = Norm('gn', nhid)
         self.pool1 = PANPooling(nhid, ratio=ratio, pan_pool_weight=pan_pool_weight, filter_size=filter_size)
         # self.drop1 = PANDropout()
 
-        nhid2 = nhid//2
-        self.conv2 = PANConv(nhid, nhid2, filter_size=filter_size)
-        self.norm2 = Norm('gn', nhid2)
-        self.pool2 = PANPooling(nhid2, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
-        # self.drop2 = PANDropout()
+        # nhid2 = nhid//2
+        # self.conv2 = PANConv(nhid, nhid2, filter_size=filter_size)
+        # self.norm2 = Norm('gn', nhid2)
+        # self.pool2 = PANPooling(nhid2, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
+        # # self.drop2 = PANDropout()
 
-        nhid3 = nhid//4
-        self.conv3 = PANConv(nhid2, nhid3, filter_size=filter_size)
-        self.norm3 = Norm('gn', nhid3)
-        self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
+        # nhid3 = nhid//4
+        # self.conv3 = PANConv(nhid2, nhid3, filter_size=filter_size)
+        # self.norm3 = Norm('gn', nhid3)
+        # self.pool3 = PANPooling(nhid3, ratio=ratio, filter_size=filter_size, pan_pool_weight=pan_pool_weight)
 
         # self.lin1 = torch.nn.Linear(nhid3, nhid3//2)
         # self.bn1 = torch.nn.BatchNorm1d(nhid3//2)
         # self.lin2 = torch.nn.Linear(nhid3//2, nhid3//4)
         # self.bn2 = torch.nn.BatchNorm1d(nhid3//4)
         # self.lin3 = torch.nn.Linear(nhid3//4, 1)
-
+        nhid3=nhid
         self.lin1 = torch.nn.Linear(nhid3, 1)
         
     def forward(self, data):
@@ -155,18 +155,18 @@ class LightningPAN(BaseNet):
         perm_list.append(perm)
         # edge_mask_list = self.drop1(edge_index, p=0.5)
 
-        x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv2.m
-        x = self.norm2(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
-        # edge_mask_list = self.drop2(edge_index, p=0.5)
+        # x = self.conv2(x, edge_index, edge_mask_list=edge_mask_list)
+        # M = self.conv2.m
+        # x = self.norm2(x, batch)
+        # x, edge_index, _, batch, perm, score_perm = self.pool2(x, edge_index, batch=batch, M=M)
+        # perm_list.append(perm)
+        # # edge_mask_list = self.drop2(edge_index, p=0.5)
 
-        x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
-        M = self.conv3.m
-        x = self.norm3(x, batch)
-        x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
-        perm_list.append(perm)
+        # x = self.conv3(x, edge_index, edge_mask_list=edge_mask_list)
+        # M = self.conv3.m
+        # x = self.norm3(x, batch)
+        # x, edge_index, _, batch, perm, score_perm = self.pool3(x, edge_index, batch=batch, M=M)
+        # perm_list.append(perm)
 
         mean = scatter_mean(x, batch, dim=0)
         x = mean
@@ -191,17 +191,17 @@ class LightningPAN(BaseNet):
             y_pred = pred.detach().cpu().numpy()
         self.log("pool1_weight_X", self.pool1.pan_pool_weight[0])
         self.log("pool1_weight_diagM", self.pool1.pan_pool_weight[1])
-        self.log("pool2_weight_X", self.pool2.pan_pool_weight[0])
-        self.log("pool2_weight_diagM", self.pool2.pan_pool_weight[1])
-        self.log("pool3_weight_X", self.pool3.pan_pool_weight[0])
-        self.log("pool3_weight_diagM", self.pool3.pan_pool_weight[1])
+        # self.log("pool2_weight_X", self.pool2.pan_pool_weight[0])
+        # self.log("pool2_weight_diagM", self.pool2.pan_pool_weight[1])
+        # self.log("pool3_weight_X", self.pool3.pan_pool_weight[0])
+        # self.log("pool3_weight_diagM", self.pool3.pan_pool_weight[1])
         return {"loss": loss, "y_true": y_true, "y_pred": y_pred}
 
     def training_epoch_end(self, outputs):
         training_loss = np.array([])
         y_true = np.array([])
         y_pred = np.array([])
-        print("improved-meanloss-Norms-poolweight")
+        print("onelayer")
         for results_dict in outputs:
             training_loss = np.append(training_loss, results_dict["loss"].to('cpu').detach().numpy())
             y_true = np.append(y_true, results_dict['y_true'])
